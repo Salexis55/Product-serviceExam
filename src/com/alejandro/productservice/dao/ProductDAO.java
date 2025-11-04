@@ -2,25 +2,31 @@ package com.alejandro.productservice.dao;
 
 import com.alejandro.productservice.model.Product;
 
+/**
+ * Interfaz DAO: define las operaciones CRUD y manejo de stock. Separa la lógica
+ * de negocio del acceso a base de datos.
+ */
 public interface ProductDAO {
 
-    void addProduct(Product product);
+	// Crear un nuevo producto
+	void addProduct(Product product);
 
-    Product getProductById(int id);
+	// Obtener un producto por ID
+	Product getProductById(int id);
 
-    void updateProduct(Product product);
+	// Actualizar un producto existente
+	void updateProduct(Product product);
 
-    void deleteProduct(int id);
+	// Eliminar un producto por ID
+	void deleteProduct(int id);
 
-    /**
-     * Simula una deducción de stock sin manejo de transacciones,
-     * vulnerable a condiciones de carrera (race conditions).
-     */
-    void deductStockNonTransactional(int id, int quantity) throws InterruptedException;
+	/**
+	 * Descuenta stock sin transacción (riesgo de condiciones de carrera).
+	 */
+	void deductStockNonTransactional(int id, int quantity) throws InterruptedException;
 
-    /**
-     * Realiza una deducción de stock de forma segura usando
-     * transacciones JDBC y bloqueo de filas (SELECT ... FOR UPDATE).
-     */
-    void deductStockTransactional(int id, int quantity);
+	/**
+	 * Descuenta stock con transacción y bloqueo de fila (seguro).
+	 */
+	void deductStockTransactional(int id, int quantity);
 }

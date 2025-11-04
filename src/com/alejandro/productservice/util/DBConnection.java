@@ -2,21 +2,20 @@ package com.alejandro.productservice.util;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
-
-import com.mysql.cj.xdevapi.Statement;
 
 public class DBConnection {
 
-	// Usamos H2 en memoria. DB_CLOSE_DELAY=-1 evita que la DB se borre
-	// mientras la JVM esté activa.
+	// Base de datos H2 en memoria.
+	// DB_CLOSE_DELAY=-1 mantiene los datos mientras la JVM esté activa.
 	private static final String URL = "jdbc:h2:mem:productservice;DB_CLOSE_DELAY=-1";
 	private static final String USER = "sa";
 	private static final String PASSWORD = "";
 
 	static {
 		try {
-			// Cargar el driver de H2
+			// Carga el driver de H2 (necesario para crear conexiones JDBC)
 			Class.forName("org.h2.Driver");
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
@@ -24,20 +23,31 @@ public class DBConnection {
 		}
 	}
 
+	// Retorna una nueva conexión con la base de datos H2
 	public static Connection getConnection() throws SQLException {
 		return DriverManager.getConnection(URL, USER, PASSWORD);
 	}
 
-	// Método para inicializar el schema de la BD
+	// Crea la tabla "products" si no existe y limpia su contenido
 	public static void setupDatabase() {
-		String createTableSQL = "CREATE TABLE IF NOT EXISTS products (" + "id INT PRIMARY KEY, "
-				+ "productCode VARCHAR(255) NOT NULL, " + "stock INT, " + "warehouse VARCHAR(255)" + ")";
+		// Script SQL para crear la tabla
+		String createTableSQL = "CREATE TABLE IF NOT EXISTS products (" 
+				+ "id INT PRIMARY KEY, "
+				+ "productCode VARCHAR(255) NOT NULL, "
+				+ "stock INT, "
+				+ "warehouse VARCHAR(255)" 
+				+ ")";
 
-		try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
+		// try-with-resources: cierra la conexión y el statement automáticamente
+		try (Connection conn = getConnection(); 
+			 PreparedStatement stmt = conn.prepareStatement(createTableSQL)) {
 
+			// Crea la tabla si no existe
 			stmt.execute(createTableSQL);
-			// Limpiamos la tabla para cada ejecución de la demo
+
+			// Limpia los registros anteriores (para reiniciar las pruebas)
 			stmt.execute("DELETE FROM products");
+
 			System.out.println("Base de datos y tabla 'products' inicializadas.");
 
 		} catch (SQLException e) {

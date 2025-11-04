@@ -1,89 +1,83 @@
 package com.alejandro.productservice.test;
 
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-
-import com.alejandro.productservice.dao.ProductDAO;
-import com.alejandro.productservice.dao.ProductDAOImpl;
+import java.util.concurrent.*; // Para manejo de hilos y concurrencia
+import com.alejandro.productservice.dao.*;
 import com.alejandro.productservice.model.Product;
 import com.alejandro.productservice.util.DBConnection;
 
+/**
+ * Clase de prueba que simula concurrencia al descontar stock.
+ * Compara resultados con y sin transacciones.
+ */
 public class ProductServiceTest {
 
+    // Parámetros de simulación
     private static final int STOCK_INICIAL = 1000;
     private static final int HILOS = 10;
-    private static final int TAREAS_POR_HILO = 10; // Total de tareas = HILOS * TAREAS_POR_HILO
-    private static final int CANTIDAD_A_DESCONTAR = 1; // Cada tarea descuenta 1
-    
-    // Total a descontar = 10 * 10 * 1 = 100
-    // Stock final esperado = 1000 - 100 = 900
+    private static final int TAREAS_POR_HILO = 10;
+    private static final int CANTIDAD_A_DESCONTAR = 1;
 
     public static void main(String[] args) throws InterruptedException {
-        
-        // 1. Inicializar la Base de Datos
+
+        // 1. Crear base de datos en memoria y DAO
         DBConnection.setupDatabase();
         ProductDAO dao = new ProductDAOImpl();
 
-        // 2. Ejecutar Simulación SIN Transacciones
+        // 2. Prueba sin transacciones (esperar inconsistencia)
         runSimulation(dao, false);
 
-        // 3. Ejecutar Simulación CON Transacciones
+        // 3. Prueba con transacciones (resultado consistente)
         runSimulation(dao, true);
     }
 
+    // Ejecuta una simulación de concurrencia
     private static void runSimulation(ProductDAO dao, boolean conTransaccion) throws InterruptedException {
-        
-        // (Re)Inicializar el producto para cada simulación
+
+        // Insertar producto base antes de iniciar
         dao.addProduct(new Product(1, "SKU-001", STOCK_INICIAL, "WH-A"));
 
         System.out.println("\n=======================================================");
-        System.out.printf("🚀 INICIANDO SIMULACIÓN: %s TRANSACCIONES 🚀\n", conTransaccion ? "CON" : "SIN");
+        System.out.printf("INICIANDO SIMULACIÓN: %s TRANSACCIONES\n", conTransaccion ? "CON" : "SIN");
         System.out.println("=======================================================");
-        System.out.printf("Stock Inicial: %d. Hilos: %d. Tareas: %d. Descuento: %d.\n",
-                STOCK_INICIAL, HILOS, TAREAS_POR_HILO * HILOS, CANTIDAD_A_DESCONTAR);
-        System.out.printf("Stock Final Esperado: %d\n", STOCK_INICIAL - (HILOS * TAREAS_POR_HILO * CANTIDAD_A_DESCONTAR));
-        System.out.println("-------------------------------------------------------");
 
-        
+        // Crear un pool de hilos para ejecutar tareas simultáneamente
         ExecutorService executor = Executors.newFixedThreadPool(HILOS);
-        
+
+        // Lanzar tareas concurrentes de descuento
         for (int i = 0; i < HILOS * TAREAS_POR_HILO; i++) {
             executor.submit(() -> {
                 try {
-                    if (conTransaccion) {
+                    if (conTransaccion)
                         dao.deductStockTransactional(1, CANTIDAD_A_DESCONTAR);
-                    } else {
+                    else
                         dao.deductStockNonTransactional(1, CANTIDAD_A_DESCONTAR);
-                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
             });
         }
 
-        // Esperar a que todas las tareas terminen
+        // Esperar que terminen todas las tareas
         executor.shutdown();
         executor.awaitTermination(1, TimeUnit.MINUTES);
 
         System.out.println("-------------------------------------------------------");
-        System.out.println("🏁 SIMULACIÓN FINALIZADA 🏁");
-        
-        // 4. Verificar Resultados
+        System.out.println("SIMULACIÓN FINALIZADA");
+
+        // 4. Verificar resultados
         Product productoFinal = dao.getProductById(1);
         int stockFinal = productoFinal.getStock();
         int stockEsperado = STOCK_INICIAL - (HILOS * TAREAS_POR_HILO * CANTIDAD_A_DESCONTAR);
 
-        System.out.println("Stock Final Registrado en DB: " + stockFinal);
+        System.out.println("Stock Final en BD: " + stockFinal);
 
-        if (stockFinal == stockEsperado) {
-            System.out.println("✅ RESULTADO: CORRECTO. La consistencia de datos se mantuvo.");
-        } else {
-            System.out.println("❌ RESULTADO: INCORRECTO. Se produjo inconsistencia de datos.");
-            System.out.printf(" (Se perdieron %d actualizaciones)\n", stockEsperado - stockFinal);
-        }
+        if (stockFinal == stockEsperado)
+            System.out.println("✅ Resultado correcto: datos consistentes.");
+        else
+            System.out.printf("❌ Inconsistencia detectada: se perdieron %d actualizaciones.\n",
+                    stockEsperado - stockFinal);
 
-        // Limpiar para la próxima simulación
+        // Eliminar producto para la próxima ejecución
         dao.deleteProduct(1);
     }
 }

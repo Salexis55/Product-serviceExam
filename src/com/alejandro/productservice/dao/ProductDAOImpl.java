@@ -1,15 +1,16 @@
 package com.alejandro.productservice.dao;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-
+import java.sql.*; // Clases JDBC para conexión, consultas y resultados
 import com.alejandro.productservice.model.Product;
 import com.alejandro.productservice.util.DBConnection;
 
+/**
+ * Implementa las operaciones definidas en ProductDAO.
+ * Maneja la conexión a base de datos mediante JDBC.
+ */
 public class ProductDAOImpl implements ProductDAO {
 
+    // Inserta un nuevo producto
     @Override
     public void addProduct(Product product) {
         String sql = "INSERT INTO products (id, productCode, stock, warehouse) VALUES (?, ?, ?, ?)";
@@ -27,6 +28,7 @@ public class ProductDAOImpl implements ProductDAO {
         }
     }
 
+    // Busca un producto por su ID
     @Override
     public Product getProductById(int id) {
         String sql = "SELECT * FROM products WHERE id = ?";
@@ -37,11 +39,12 @@ public class ProductDAOImpl implements ProductDAO {
             pstmt.setInt(1, id);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    product = new Product();
-                    product.setId(rs.getInt("id"));
-                    product.setProductCode(rs.getString("productCode"));
-                    product.setStock(rs.getInt("stock"));
-                    product.setWarehouse(rs.getString("warehouse"));
+                    product = new Product(
+                        rs.getInt("id"),
+                        rs.getString("productCode"),
+                        rs.getInt("stock"),
+                        rs.getString("warehouse")
+                    );
                 }
             }
         } catch (SQLException e) {
@@ -50,6 +53,7 @@ public class ProductDAOImpl implements ProductDAO {
         return product;
     }
 
+    // Actualiza un producto existente
     @Override
     public void updateProduct(Product product) {
         String sql = "UPDATE products SET productCode = ?, stock = ?, warehouse = ? WHERE id = ?";
@@ -67,6 +71,7 @@ public class ProductDAOImpl implements ProductDAO {
         }
     }
 
+    // Elimina un producto por ID
     @Override
     public void deleteProduct(int id) {
         String sql = "DELETE FROM products WHERE id = ?";
@@ -82,37 +87,27 @@ public class ProductDAOImpl implements ProductDAO {
     }
 
     /**
-     * IMPLEMENTACIÓN "INCORRECTA" (No transaccional)
-     * Esta es la operación de "Leer-Modificar-Escribir" que causa la condición de carrera.
+     * Deducción SIN transacción — propensa a errores por concurrencia.
+     * Cada hilo usa su propia conexión (auto-commit=true), lo que genera
+     * condiciones de carrera al leer/modificar/escribir.
      */
     @Override
     public void deductStockNonTransactional(int id, int quantity) throws InterruptedException {
-        // 1. LEER (READ)
-        // Cada hilo obtiene su propia conexión (auto-commit=true por defecto)
         Product product = getProductById(id);
         
         if (product != null && product.getStock() >= quantity) {
-            // Se simula un pequeño retardo (ej. lógica de negocio, validación)
-            // Esto da tiempo a que otros hilos lean el valor "antiguo" del stock.
-            Thread.sleep(10); // <-- CLAVE DE LA DEMOSTRACIÓN
-
-            // 2. MODIFICAR (MODIFY)
-            int newStock = product.getStock() - quantity;
-            product.setStock(newStock);
-
-            // 3. ESCRIBIR (WRITE)
-            // El método updateProduct() abre OTRA conexión y actualiza.
+            Thread.sleep(10); // simula retraso para provocar error de concurrencia
+            product.setStock(product.getStock() - quantity);
             updateProduct(product);
-            
-            System.out.println(Thread.currentThread().getName() + " procesó. Stock ahora (teóricamente): " + newStock);
+            System.out.println(Thread.currentThread().getName() + " procesó. Nuevo stock: " + product.getStock());
         } else {
             System.out.println(Thread.currentThread().getName() + " no pudo procesar (sin stock).");
         }
     }
 
     /**
-     * IMPLEMENTACIÓN "CORRECTA" (Transaccional)
-     * Usa una sola conexión, setAutoCommit(false) y SELECT ... FOR UPDATE.
+     * Deducción CON transacción — segura frente a concurrencia.
+     * Usa SELECT ... FOR UPDATE para bloquear la fila durante la operación.
      */
     @Override
     public void deductStockTransactional(int id, int quantity) {
@@ -122,62 +117,44 @@ public class ProductDAOImpl implements ProductDAO {
         Connection conn = null;
         try {
             conn = DBConnection.getConnection();
-            // 1. Iniciar Transacción
-            conn.setAutoCommit(false);
+            conn.setAutoCommit(false); // inicia transacción
 
             int currentStock = -1;
 
-            // 2. LEER Y BLOQUEAR LA FILA
-            // H2 (y otras DBs) bloquearán esta fila hasta que la transacción haga commit o rollback.
-            // Otros hilos que intenten un "SELECT ... FOR UPDATE" esperarán aquí.
+            // Bloquea la fila hasta el commit/rollback
             try (PreparedStatement selectStmt = conn.prepareStatement(selectForUpdate)) {
                 selectStmt.setInt(1, id);
                 try (ResultSet rs = selectStmt.executeQuery()) {
-                    if (rs.next()) {
-                        currentStock = rs.getInt("stock");
-                    } else {
-                        throw new SQLException("Producto no encontrado, rollback.");
-                    }
+                    if (rs.next()) currentStock = rs.getInt("stock");
+                    else throw new SQLException("Producto no encontrado");
                 }
             }
 
-            // 3. MODIFICAR (en memoria)
             if (currentStock >= quantity) {
                 int newStock = currentStock - quantity;
-
-                // 4. ESCRIBIR
                 try (PreparedStatement updateStmt = conn.prepareStatement(updateStock)) {
                     updateStmt.setInt(1, newStock);
                     updateStmt.setInt(2, id);
                     updateStmt.executeUpdate();
                 }
-                System.out.println(Thread.currentThread().getName() + " procesó. Stock actualizado a: " + newStock);
+                System.out.println(Thread.currentThread().getName() + " procesó. Stock actualizado: " + newStock);
             } else {
-                System.out.println(Thread.currentThread().getName() + " no pudo procesar (sin stock).");
+                System.out.println(Thread.currentThread().getName() + " sin stock suficiente.");
             }
 
-            // 5. Confirmar Transacción
-            conn.commit();
+            conn.commit(); // confirma cambios
 
         } catch (SQLException e) {
-            // 6. Manejar Error y Revertir
-            System.err.println(Thread.currentThread().getName() + " | Error: " + e.getMessage() + ". ¡Haciendo rollback!");
-            if (conn != null) {
-                try {
-                    conn.rollback();
-                } catch (SQLException ex) {
-                    ex.printStackTrace();
-                }
-            }
+            System.err.println(Thread.currentThread().getName() + " | Error: " + e.getMessage());
+            try { if (conn != null) conn.rollback(); } catch (SQLException ex) { ex.printStackTrace(); }
         } finally {
-            // 7. Cerrar conexión
-            if (conn != null) {
-                try {
-                    conn.setAutoCommit(true); // Restaurar estado
+            try {
+                if (conn != null) {
+                    conn.setAutoCommit(true);
                     conn.close();
-                } catch (SQLException e) {
-                    e.printStackTrace();
                 }
+            } catch (SQLException e) {
+                e.printStackTrace();
             }
         }
     }
