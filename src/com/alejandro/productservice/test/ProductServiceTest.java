@@ -37,7 +37,7 @@ public class ProductServiceTest {
         dao.addProduct(new Product(1, "SKU-001", STOCK_INICIAL, "WH-A"));
 
         System.out.println("\n=======================================================");
-        System.out.printf("INICIANDO SIMULACIÓN: %s TRANSACCIONES\n", conTransaccion ? "CON" : "SIN");
+        System.out.printf("iniciando simulacion: %s transacciones\n", conTransaccion ? "con" : "sin");
         System.out.println("=======================================================");
 
         // Crear un pool de hilos para ejecutar tareas simultáneamente
@@ -61,8 +61,7 @@ public class ProductServiceTest {
         executor.shutdown();
         executor.awaitTermination(1, TimeUnit.MINUTES);
 
-        System.out.println("-------------------------------------------------------");
-        System.out.println("SIMULACIÓN FINALIZADA");
+        System.out.println("simulacion finalizada");
 
         // 4. Verificar resultados
         Product productoFinal = dao.getProductById(1);
@@ -72,9 +71,9 @@ public class ProductServiceTest {
         System.out.println("Stock Final en BD: " + stockFinal);
 
         if (stockFinal == stockEsperado)
-            System.out.println("✅ Resultado correcto: datos consistentes.");
+            System.out.println(" Resultado correcto: datos consistentes.");
         else
-            System.out.printf("❌ Inconsistencia detectada: se perdieron %d actualizaciones.\n",
+            System.out.printf(" Inconsistencia detectada: se perdieron %d actualizaciones.\n",
                     stockEsperado - stockFinal);
 
         // Eliminar producto para la próxima ejecución

@@ -9,9 +9,9 @@ public class DBConnection {
 
 	// Base de datos H2 en memoria.
 	// DB_CLOSE_DELAY=-1 mantiene los datos mientras la JVM esté activa.
-	private static final String URL = "jdbc:h2:mem:productservice;DB_CLOSE_DELAY=-1";
-	private static final String USER = "sa";
-	private static final String PASSWORD = "";
+	private static final String URL = "jdbc:mysql://localhost:3306/examen";
+	private static final String USER = "root";
+	private static final String PASSWORD = "Admin";
 
 	static {
 		try {
